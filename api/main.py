@@ -2,12 +2,14 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import psycopg2
 import sqlglot
+import openai
 
 import os
 
 app = FastAPI()
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgres://app:app@db:5432/demo")
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 class QueryRequest(BaseModel):
     sql: str
@@ -15,7 +17,9 @@ class QueryRequest(BaseModel):
 def validate_sql(sql: str):
     try:
         parsed = sqlglot.parse_one(sql, read="postgres")
-        if parsed.key != "SELECT":
+        print(parsed)
+        print(parsed.key)
+        if parsed.key != "select":
             raise ValueError("Only SELECT queries are allowed")
         # אפשר להוסיף בדיקות נוספות: LIMIT, deny-list, וכו'
         return True
@@ -41,3 +45,29 @@ def run_query(req: QueryRequest):
         raise HTTPException(status_code=500, detail=f"DB Error: {e}")
 
     return {"columns": colnames, "rows": rows}
+
+class NLRequest(BaseModel):
+    question: str
+
+@app.post("/nl2sql")
+def nl2sql(req: NLRequest):
+    schema = open("docs/schema_summaries.md").read()
+
+    prompt = f"""
+You are a helpful assistant that generates PostgreSQL SELECT queries ONLY.
+Return output in JSON with keys: intent, sql.
+Schema:
+{schema}
+
+User question: {req.question}
+"""
+    resp = openai.ChatCompletion.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0,
+    )
+    try:
+        data = json.loads(resp["choices"][0]["message"]["content"])
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Bad LLM output: {e}")
