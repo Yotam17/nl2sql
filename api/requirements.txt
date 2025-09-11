@@ -3,3 +3,4 @@ uvicorn[standard]
 psycopg2-binary
 sqlglot
 pydantic
+openai>=1.0.0

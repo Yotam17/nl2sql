@@ -14,22 +14,22 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
   api:
     build: ./api
     container_name: nl2sql_api
     ports:
       - "8000:8000"
+
     depends_on:
-      db:
-        condition: service_healthy
+      - db   # בלי condition: service_healthy
     environment:
       DATABASE_URL: ${DATABASE_URL}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
-
+    volumes:
+      - ./docs:/app/docs
 volumes:
   pgdata:

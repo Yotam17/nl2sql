@@ -2,14 +2,15 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import psycopg2
 import sqlglot
-import openai
+from openai import OpenAI
+import json
 
 import os
 
 app = FastAPI()
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgres://app:app@db:5432/demo")
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 class QueryRequest(BaseModel):
     sql: str
@@ -61,13 +62,17 @@ Schema:
 
 User question: {req.question}
 """
-    resp = openai.ChatCompletion.create(
+    resp = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
         temperature=0,
     )
     try:
-        data = json.loads(resp["choices"][0]["message"]["content"])
+        data = json.loads(resp.choices[0].message.content)
         return data
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Bad LLM output: {e}")
+
+@app.get("/healthz")
+def healthz():
+    return {"status": "ok"}
