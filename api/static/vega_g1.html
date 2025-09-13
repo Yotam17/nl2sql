@@ -1,0 +1,39 @@
+<div id="vis"></div>
+<div id="notices"></div>
+<script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
+<script>
+fetch("http://localhost:8000/ask", {
+  method: "POST",
+  headers: {"Content-Type": "application/json"},
+  body: JSON.stringify({question: "show top customers as chart (highest orders)"})
+})
+.then(res => res.json())
+.then(data => {
+  console.log("Response data:", data);
+  console.log("Rows:", data.rows);
+  console.log("Viz spec:", data.viz_spec);
+  console.log("Notices:", data.notices);
+  
+  // הצגת notices
+  const noticesDiv = document.getElementById('notices');
+  if (data.notices && data.notices.length > 0) {
+    noticesDiv.innerHTML = '<h3>System Notices:</h3><ul>' + 
+      data.notices.map(notice => `<li>${notice}</li>`).join('') + 
+      '</ul>';
+  } else {
+    noticesDiv.innerHTML = '';
+  }
+  
+  // יצירת spec מלא ל-Vega-Lite
+  const fullSpec = {
+    data: {values: data.rows},
+    ...data.viz_spec
+  };
+  
+  console.log("Full Vega-Lite spec:", fullSpec);
+  
+  vegaEmbed('#vis', fullSpec);
+});
+</script>

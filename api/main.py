@@ -3,11 +3,17 @@ from pydantic import BaseModel
 import psycopg2
 import sqlglot
 from openai import OpenAI
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 import json
+from graph import build_graph
 
 import os
 
 app = FastAPI()
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+graph = build_graph()
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgres://app:app@db:5432/demo")
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -72,6 +78,35 @@ User question: {req.question}
         return data
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Bad LLM output: {e}")
+
+class QueryRequest(BaseModel):
+    question: str
+
+@app.post("/ask")
+def ask(req: QueryRequest):
+    result = graph.invoke({"query": req.question})
+
+    if result.get("action") == "download":
+        return FileResponse(result["file_path"], filename="result.csv")
+    else:
+        response_data = {
+            "intent": result.get("intent"),
+            "sql": result.get("sql"),
+            "rows": result.get("rows"),
+            "viz_spec": result.get("viz_spec"),
+            "notices": result.get("notices", [])
+        }
+        
+        # אם השאילתה נחסמה, הוסף reasons
+        if result.get("blocked") is True or (not result.get("guardrail_ok", True)):
+            response_data["blocked"] = True
+            # קח קודם מ-state["reasons"], ואם לא קיים – נצלול ל-findings
+            reasons = result.get("reasons")
+            if not reasons:
+                reasons = (result.get("findings") or {}).get("reasons", [])
+            response_data["reasons"] = reasons
+        
+        return JSONResponse(response_data)
 
 @app.get("/healthz")
 def healthz():

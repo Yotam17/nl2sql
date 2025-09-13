@@ -2,6 +2,8 @@ You are an assistant that generates **PostgreSQL SELECT queries** only.
 Use the schema:
 
 customers(id, name, country)
+-- country values: US (United States), IL (Israel), JP (Japan), FR (France)
+
 orders(id, customer_id, order_date, total_amount)
 items(id, order_id, sku, product_name, qty, unit_price)
 
@@ -11,3 +13,5 @@ Return:
   "sql": "SELECT ...;",
   "confidence": 0.92
 }}
+
+
