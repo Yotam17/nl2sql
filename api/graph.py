@@ -283,12 +283,85 @@ def execute_sql(state: GraphState):
 
 def generate_viz_spec(state: GraphState):
     rows = state["rows"]
+    query = state["query"]
     
     if not rows:
         state["viz_spec"] = {"mark": "text", "text": "No data available"}
         return state
     
-    # זיהוי השדות הזמינים
+    # יצירת prompt ל-Vega-Lite
+    sample_data = rows[:5] if len(rows) > 5 else rows  # דוגמה של הנתונים
+    
+    prompt = f"""
+You are a Vega-Lite stylist. Given data and user query, return a beautified Vega-Lite v5 JSON applying:
+
+Style contract (must apply):
+- width: 720, height: 420, padding: {{"left": 10, "right": 10, "top": 10, "bottom": 10}}
+- background: "white"
+- config:
+    view: {{stroke: null}}
+    font: "Inter, Arial, sans-serif"
+    axis: {{
+      labelFontSize: 12, titleFontSize: 13, grid: true, gridOpacity: 0.25,
+      labelColor: "#334155", titleColor: "#334155", tickColor: "#CBD5E1"
+    }}
+    legend: {{labelFontSize: 12, titleFontSize: 13, orient: "bottom"}}
+    header: {{labelFontSize: 12, titleFontSize: 13}}
+- encoding defaults:
+    tooltip: [{{"field":"*","type":"nominal"}}]
+    x: if nominal/ordinal with long labels → labelAngle: -30, labelLimit: 140, labelOverlap: "greedy"
+    y: use "quantitative" with nice: true and axis format ",.2f" or "~s" as appropriate
+- color scheme: {{"scheme": "tableau10"}}
+- titles: short, in Title Case
+- nice margins: for bar use "cornerRadius": 4, "binSpacing": 2
+- do not include data URLs; use {{"data": {{"values": ...}}}} only
+
+User query: {query}
+Sample data: {sample_data}
+
+Return a valid Vega-Lite v5 JSON only (no prose)."""
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=500
+        )
+        
+        viz_spec_text = response.choices[0].message.content.strip()
+        
+        # ניקוי התוצאה
+        if viz_spec_text.startswith("```json"):
+            viz_spec_text = viz_spec_text[7:]
+        if viz_spec_text.startswith("```"):
+            viz_spec_text = viz_spec_text[3:]
+        if viz_spec_text.endswith("```"):
+            viz_spec_text = viz_spec_text[:-3]
+        
+        viz_spec_text = viz_spec_text.strip()
+        
+        # המרה ל-JSON
+        try:
+            viz_spec = json.loads(viz_spec_text)
+            state["viz_spec"] = viz_spec
+        except json.JSONDecodeError as e:
+            print(f"Error parsing Vega-Lite spec: {e}")
+            # fallback ל-spec פשוט
+            state["viz_spec"] = create_fallback_viz_spec(rows)
+        
+    except Exception as e:
+        print(f"Error in generate_viz_spec: {e}")
+        # fallback ל-spec פשוט
+        state["viz_spec"] = create_fallback_viz_spec(rows)
+    
+    return state
+
+def create_fallback_viz_spec(rows):
+    """יוצר Vega-Lite spec פשוט כגיבוי"""
+    if not rows:
+        return {"mark": "text", "text": "No data available"}
+    
     available_fields = list(rows[0].keys())
     
     # בחירת שדות מתאימים
@@ -313,27 +386,47 @@ def generate_viz_spec(state: GraphState):
     if not y_field and len(available_fields) > 1:
         y_field = available_fields[1]
     
-    # יצירת spec
+    # יצירת spec עם styling
     if y_field:
-        state["viz_spec"] = {
-            "mark": "bar",
+        return {
+            "width": 720,
+            "height": 420,
+            "background": "white",
+            "padding": {"left": 10, "right": 10, "top": 10, "bottom": 10},
+            "config": {
+                "view": {"stroke": None},
+                "font": "Inter, Arial, sans-serif",
+                "axis": {
+                    "labelFontSize": 12,
+                    "titleFontSize": 13,
+                    "grid": True,
+                    "gridOpacity": 0.25,
+                    "labelColor": "#334155",
+                    "titleColor": "#334155",
+                    "tickColor": "#CBD5E1"
+                },
+                "legend": {"labelFontSize": 12, "titleFontSize": 13, "orient": "bottom"}
+            },
+            "mark": {"type": "bar", "cornerRadius": 4, "binSpacing": 2},
             "encoding": {
-                "x": {"field": x_field, "type": "ordinal"},
-                "y": {"field": y_field, "type": "quantitative"}
+                "x": {"field": x_field, "type": "ordinal", "labelAngle": -30, "labelLimit": 140},
+                "y": {"field": y_field, "type": "quantitative", "nice": True, "axis": {"format": "~s"}},
+                "color": {"scheme": "tableau10"}
             },
             "title": "Data Visualization"
         }
     else:
-        # אם יש רק שדה אחד, נציג אותו כטקסט
-        state["viz_spec"] = {
+        return {
+            "width": 720,
+            "height": 420,
+            "background": "white",
+            "padding": {"left": 10, "right": 10, "top": 10, "bottom": 10},
             "mark": "text",
             "encoding": {
                 "text": {"field": x_field, "type": "nominal"}
             },
             "title": "Data List"
         }
-    
-    return state
 
 def decide_action(state: GraphState):
     q = state["query"].lower()

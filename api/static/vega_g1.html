@@ -1,39 +1,110 @@
+<div style="margin-bottom: 20px;">
+  <h2>NL2SQL Query Interface</h2>
+  <form id="queryForm">
+    <div style="margin-bottom: 10px;">
+      <label for="queryInput" style="display: block; margin-bottom: 5px; font-weight: bold;">Enter your question:</label>
+      <textarea 
+        id="queryInput" 
+        rows="3" 
+        cols="80" 
+        placeholder="e.g., show top customers as chart (highest orders)"
+        style="width: 100%; max-width: 600px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-family: Arial, sans-serif;"
+      ></textarea>
+    </div>
+    <div>
+      <button type="submit" style="padding: 10px 20px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px;">
+        Submit Query
+      </button>
+      <span id="loading" style="margin-left: 10px; color: #666; display: none;">Loading...</span>
+    </div>
+  </form>
+</div>
+
 <div id="vis"></div>
 <div id="notices"></div>
+
 <script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
 <script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
 <script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
 <script>
-fetch("http://localhost:8000/ask", {
-  method: "POST",
-  headers: {"Content-Type": "application/json"},
-  body: JSON.stringify({question: "show top customers as chart (highest orders)"})
-})
-.then(res => res.json())
-.then(data => {
-  console.log("Response data:", data);
-  console.log("Rows:", data.rows);
-  console.log("Viz spec:", data.viz_spec);
-  console.log("Notices:", data.notices);
-  
-  // הצגת notices
+function executeQuery(question) {
+  const loadingSpan = document.getElementById('loading');
+  const visDiv = document.getElementById('vis');
   const noticesDiv = document.getElementById('notices');
-  if (data.notices && data.notices.length > 0) {
-    noticesDiv.innerHTML = '<h3>System Notices:</h3><ul>' + 
-      data.notices.map(notice => `<li>${notice}</li>`).join('') + 
-      '</ul>';
+  
+  // הצגת loading
+  loadingSpan.style.display = 'inline';
+  visDiv.innerHTML = '';
+  noticesDiv.innerHTML = '';
+  
+  fetch("http://localhost:8000/ask", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({question: question})
+  })
+  .then(res => res.json())
+  .then(data => {
+    console.log("Response data:", data);
+    console.log("Rows:", data.rows);
+    console.log("Viz spec:", data.viz_spec);
+    console.log("Notices:", data.notices);
+    
+    // הצגת notices
+    if (data.notices && data.notices.length > 0) {
+      noticesDiv.innerHTML = '<h3>System Notices:</h3><ul>' + 
+        data.notices.map(notice => `<li>${notice}</li>`).join('') + 
+        '</ul>';
+    } else {
+      noticesDiv.innerHTML = '';
+    }
+    
+    // הצגת blocked/reasons אם יש
+    if (data.blocked) {
+      noticesDiv.innerHTML += '<h3 style="color: red;">Query Blocked:</h3><ul>' + 
+        data.reasons.map(reason => `<li style="color: red;">${reason}</li>`).join('') + 
+        '</ul>';
+    }
+    
+    // יצירת spec מלא ל-Vega-Lite
+    const fullSpec = {
+      data: {values: data.rows},
+      ...data.viz_spec
+    };
+    
+    console.log("Full Vega-Lite spec:", fullSpec);
+    
+    vegaEmbed('#vis', fullSpec);
+  })
+  .catch(error => {
+    console.error("Error:", error);
+    visDiv.innerHTML = '<p style="color: red;">Error executing query: ' + error.message + '</p>';
+  })
+  .finally(() => {
+    loadingSpan.style.display = 'none';
+  });
+}
+
+// טיפול ב-form submission
+document.getElementById('queryForm').addEventListener('submit', function(e) {
+  e.preventDefault();
+  const queryInput = document.getElementById('queryInput');
+  const question = queryInput.value.trim();
+  
+  if (question) {
+    executeQuery(question);
   } else {
-    noticesDiv.innerHTML = '';
+    alert('Please enter a question');
   }
-  
-  // יצירת spec מלא ל-Vega-Lite
-  const fullSpec = {
-    data: {values: data.rows},
-    ...data.viz_spec
-  };
-  
-  console.log("Full Vega-Lite spec:", fullSpec);
-  
-  vegaEmbed('#vis', fullSpec);
 });
+
+// טיפול ב-Enter ב-textarea
+document.getElementById('queryInput').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    document.getElementById('queryForm').dispatchEvent(new Event('submit'));
+  }
+});
+
+// שאילתה ראשונית
+executeQuery("show top customers as chart (highest orders)");
 </script>
